@@ -1,3 +1,8 @@
+
+:- consult(room_constraints).
+:- consult(energy).
+
+
 /* =====================================================
    FILIERES
 ===================================================== */
@@ -56,7 +61,7 @@ teacher(t11, 3).
 /* CS */
 course(cs_algo, cs, t1, projector, lecture, 2, high).
 course(cs_algo_lab, cs, t1, lab_pc, exercise, 2, high).
-course(cs_db, cs, t2, lab_pc, lecture, 2, high).
+course(cs_db, cs, t2, projector, lecture, 2, high).
 course(cs_networks, cs, t4, projector, lecture, 2, medium).
 course(cs_web, cs, t5, whiteboard, lecture, 2, medium).
 course(cs_os, cs, t6, projector, lecture, 2, high).
@@ -64,7 +69,7 @@ course(cs_ai_intro, cs, t3, projector, lecture, 2, medium).
 
 /* AI */
 course(ai_math, ai, t3, projector, lecture, 2, high).
-course(ai_ml, ai, t4, lab_pc, lecture, 2, high).
+course(ai_ml, ai, t4, projector, lecture, 2, high).
 course(ai_ml_lab, ai, t4, lab_pc, exercise, 2, high).
 course(ai_dl, ai, t8, projector, lecture, 2, high).
 course(ai_data, ai, t9, lab_pc, exercise, 2, medium).
@@ -102,20 +107,18 @@ course(math_discrete, math, t5, whiteboard, lecture, 2, high).
    ROOMS (UNCHANGED)
 ===================================================== */
 
-room(amphi1,150,projector,amphi).
-room(amphi2,120,projector,amphi).
-room(amphi3,180,projector,amphi).
-room(amphi4,200,projector,amphi).
-
-room(lab1,40,lab_pc,lab).
-room(lab2,35,lab_pc,lab).
-room(lab3,45,lab_pc,lab).
-room(lab4,60,lab_pc,lab).
-
-room(class1,60,whiteboard,class).
-room(class2,50,whiteboard,class).
-room(class3,70,whiteboard,class).
-room(class4,80,whiteboard,class).
+room(amphi1, 150, projector, amphi,  b1, 12).
+room(amphi2, 120, projector, amphi,  b1, 12).
+room(amphi3, 180, projector, amphi,  b2, 14).
+room(amphi4, 200, projector, amphi,  b2, 14).
+room(lab1,    40, lab_pc,    lab,    b1, 28).
+room(lab2,    35, lab_pc,    lab,    b1, 28).
+room(lab3,    45, lab_pc,    lab,    b2, 30).
+room(lab4,    60, lab_pc,    lab,    b2, 30).
+room(class1,  60, whiteboard, class, b1,  8).
+room(class2,  50, whiteboard, class, b1,  8).
+room(class3,  70, whiteboard, class, b2,  9).
+room(class4,  80, whiteboard, class, b2,  9).
 
 /* =====================================================
    TIMESLOTS (UNCHANGED)
@@ -165,11 +168,10 @@ inc_counter :-
 ===================================================== */
 
 valid(C, assign(C,R,S)) :-
-    course_groups(C,Gs),
-    slot(S,_,_),
-    room(R,Cap,_,_),
-    total_size(Gs,Size),
-    Cap >= Size.
+    slot(S, _, _),
+    room(R, _, _, _, _, _),
+    equipment_ok(C, R),
+    capacity_ok(C, R).
 
 /* =====================================================
    BUILD DOMAINS
@@ -185,17 +187,14 @@ build_domains([C|Cs], [C-D|Rest]) :-
    CONSTRAINTS
 ===================================================== */
 
-consistent(assign(C,R,S),Sched) :-
-    \+ member(assign(_,R,S),Sched),
-
+consistent(assign(C,R,S), Sched) :-
+    room_constraints_ok(assign(C,R,S)),          
+    energy_ok_incremental(assign(C,R,S), Sched), 
+    \+ member(assign(_,R,S), Sched),
     course(C,_,T,_,_,_,_),
-    \+ (member(assign(C2,_,S),Sched),
-        course(C2,_,T,_,_,_,_)),
-
+    \+ (member(assign(C2,_,S),Sched), course(C2,_,T,_,_,_,_)),
     course_groups(C,Gs),
-    \+ (member(assign(C2,_,S),Sched),
-        course_groups(C2,Gs2),
-        \+ disjoint(Gs,Gs2)).
+    \+ (member(assign(C2,_,S),Sched), course_groups(C2,Gs2), \+disjoint(Gs,Gs2)).
 
 disjoint([], _).
 disjoint([H|T],L) :- \+ member(H,L), disjoint(T,L).
