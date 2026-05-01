@@ -1,178 +1,135 @@
-# 📅 University Timetable Scheduling System
+# University Timetable Scheduling System (Prolog + Python)
 
-## 📌 Project Overview
+This project generates a **conflict-free university timetable** using **constraint solving in Prolog**, then optionally turns the result into **HTML timetables** using a small Python script.
 
-This project implements a **constraint-based university timetable generator** using **Prolog**, combined with a **Python post-processing layer** to visualize results as structured HTML timetables.
+The codebase is intentionally **consult-only Prolog** (no Prolog modules) to keep it simple to load and run in SWI-Prolog.
 
-The system models:
-- multiple filières (study programs)
-- groups of students
-- teachers with workload constraints
-- rooms with capacity and equipment requirements
-- time slots across a weekly schedule
+## Requirements
 
-The goal is to automatically generate a **valid, conflict-free timetable** and present it in a **readable web format per filière**.
+- SWI-Prolog (tested with `swipl` on Windows)
+- Python 3 (only needed for HTML generation)
 
----
+## Quick start (recommended)
 
-## ⚙️ System Architecture
+From the project root:
 
-The project is divided into three main layers:
+```bash
+swipl -q -s io/main.pl
+```
 
-### 1. 📚 Knowledge Base (Prolog DB)
-Defines the academic structure:
-- Filieres (CS, AI, ING, DS, SE, MATH)
-- Student groups per filière
-- Teachers with workload limits
-- Courses with type, priority, and constraints
-- Rooms with capacity and equipment
-- Time slots across multiple days
+You should see a “PROJECT LOADED SUCCESSFULLY” message.
 
----
+Then in the Prolog prompt:
 
-### 2. 🧠 Constraint Solver (Prolog)
-Implements:
-- **Domain generation per course**
-- **Hard constraint checking**
-  - room capacity
-  - equipment compatibility
-  - teacher conflicts
-  - group overlaps
-- **MRV (Minimum Remaining Values) heuristic**
-- **Backtracking search**
-- **Progress tracking (node counter)**
+```prolog
+?- solve(S).
+```
 
-Output format:
-course -> room @ slot
+`S` is a schedule list of terms like:
 
-This ensures a **valid global schedule assignment** for all courses.
+```prolog
+assign(Course, Room, Slot)
+```
 
----
+## What you can run
 
-### 3. 🎨 Visualization Layer (Python + HTML)
-A Python script:
-- parses Prolog output
-- maps slot IDs → (day, time)
-- groups courses by filière
-- generates a **multi-table HTML dashboard**
+### 1) Generate a valid schedule
 
-Each filière gets its own timetable view with:
-- weekly grid layout
-- styled cells
-- course + room display
+```prolog
+?- solve(S).
+```
 
----
+### 2) Export a schedule to text / simple HTML
 
-## 🚀 Key Achievements
+Text format (`course -> room @ slot`):
 
-### ✅ Constraint Modeling
-- Successfully modeled a real academic scheduling system
-- Integrated multiple constraint types:
-  - resource constraints (rooms, equipment)
-  - human constraints (teachers)
-  - group conflicts
+```prolog
+?- export_txt('io/schedule.txt').
+```
 
----
+Simple HTML table (course/room/slot):
 
-### ✅ Search Optimization
-- Implemented MRV-based selection strategy
-- Reduced search space significantly
-- Added forward-checking style pruning
-- Added runtime progress monitoring
+```prolog
+?- export_html('io/timetable.html').
+```
 
----
+### 3) Pick the “best” schedule (scored)
 
-### ✅ Scalability Improvements
-- Expanded dataset to include:
-  - multiple filières
-  - large number of groups
-  - extended room and slot availability
-  - increased course diversity
+The optimizer generates multiple valid schedules and selects the best one using a weighted score (energy + gaps + fairness + etc.):
 
----
+```prolog
+?- best_schedule(Best).
+```
 
-### ✅ Visualization System
-- Built automated HTML generator
-- Implemented:
-  - structured weekly grids
-  - multi-filière separation
-  - dynamic slot mapping
-- Converted raw solver output into a readable interface
+To see the score breakdown for a schedule:
 
----
+```prolog
+?- solve(S), explain_score(S).
+```
 
-## 🧩 Current Limitations
+### 4) Get a small “Pareto-like” view
 
-Despite working functionality, some improvements are still needed:
+```prolog
+?- pareto_top3(P).
+```
 
-### ⚠️ Solver Completeness
-- In some configurations, not all courses are guaranteed to appear
-- Search may terminate early depending on constraint tightness
-- No explicit “full coverage guarantee” enforcement
+Returns three schedules: best by energy, best by fairness, and best balanced.
 
----
+## Generate the “by filière” HTML timetable (Python)
 
-### ⚠️ Optimization Quality
-- No global optimal scheduling (only first valid solution)
-- No cost function balancing (e.g., workload fairness, spacing quality)
+1) First export a schedule to `io/schedule.txt` (see above).
 
----
+2) Run the Python script from the `io/` folder (important, because the script reads/writes relative filenames):
 
-### ⚠️ Scalability Boundaries
-- Backtracking becomes expensive with very large datasets
-- No caching or memoization of partial states
+```bash
+cd io
+python txt_to_timetable.py
+```
 
----
+This generates:
 
-### ⚠️ Visualization Enhancements
-- HTML output is static
-- No interactive filtering or drag-and-drop editing
-- No real-time conflict highlighting
+- `io/timetable_by_filiere.html`
 
----
+Open that HTML file in a browser.
 
-## 🔮 Future Improvements
+## Project structure (what each file does)
 
-### 🧠 Solver Enhancements
-- Add constraint propagation (AC-3 style filtering)
-- Introduce backjumping or conflict-directed backtracking
-- Guarantee full course coverage via validation loop
-- Add the energy constraints and exapand the DB
+### Core (data + CSP search)
 
----
+- `core/domain.pl`: all facts (filieres, groups, teachers, courses, rooms, slots)
+- `core/helpers.pl`: helper predicates (group sizes, filière groups, disjoint checks)
+- `core/search.pl`: MRV and random variable selection utilities
+- `core/solver.pl`: backtracking solver and consistency checks
 
-### 📊 Optimization Layer
-- Add scoring function for schedule quality:
-  - teacher workload balance
-  - room utilization efficiency
-  - gap minimization for students
-- Implement best-solution search instead of first-solution
+### Rules (hard constraints + metrics)
 
----
+- `rules/room_constraints.pl`: equipment + capacity + maintenance constraints
+- `rules/energy.pl`: building/day energy constraints + energy total for scoring
+- `rules/fairness.pl`: teacher workload fairness metric for scoring
 
-### 🌐 Web Interface Upgrade
-- Convert HTML output into interactive dashboard
-- Add:
-  - filière filters
-  - course search
-  - hover-based details
-- Optional React-based UI
+### Engine (optimization/scoring)
 
----
+- `engine/evaluation_engine.pl`: computes scores (energy, gaps, fairness, compactness, travel, peak)
+- `engine/optimizer.pl`: generates multiple solutions and selects the best by score
 
-### 🔄 System Integration
-- Direct Prolog → JSON export (remove intermediate parsing step)
-- Live schedule regeneration pipeline
-- API wrapper for scheduling requests
+### IO (loading + exporting + generated artifacts)
 
----
+- `io/main.pl`: single entrypoint; consults the entire project in the right order
+- `io/exports.pl`: `export_txt/1` and `export_html/1`
+- `io/schedule.txt`: example/generated solver output
+- `io/timetable.html`: generated simple HTML table
+- `io/timetable_by_filiere.html`: generated per-filière timetable
+- `io/txt_to_timetable.py`: converts `schedule.txt` → `timetable_by_filiere.html`
 
-## 📌 Conclusion
+## Customization
 
-This project demonstrates a full pipeline combining:
-- symbolic AI (Prolog constraint solving)
-- algorithmic optimization (search heuristics)
-- data transformation (Python parsing)
-- UI generation (HTML visualization)
+- To change the dataset (courses/rooms/slots), edit `core/domain.pl`.
+- To add constraints:
+  - hard room constraints → `rules/room_constraints.pl`
+  - energy constraints / limits → `rules/energy.pl`
+- To change what “best” means, edit the weights in `engine/evaluation_engine.pl`.
 
-It forms a solid foundation for a **real-world academic scheduling system**, with clear paths toward scalability, optimization, and interactive deployment.
+## Troubleshooting
+
+- If you see “predicate not found” errors, always load via `swipl -s io/main.pl` (it consults files in the correct order).
+- If Python can’t find `schedule.txt`, run the script from inside `io/` as shown above.

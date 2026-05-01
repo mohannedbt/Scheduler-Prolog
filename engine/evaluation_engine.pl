@@ -1,43 +1,25 @@
-:- module(metrics, [
-    compute_energy_score/2,
-    compute_gap_score/2,
-    compute_fairness_score/2,
-    compute_compactness_score/2,
-    compute_travel_score/2,
-    compute_peak_score/2,
-    score/2,
-    explain_score/1
-]).
+:- use_module(library(lists)).
 
-:- ensure_loaded('solver.pl').
-:- use_module('fairness.pl', [compute_fairness_score/2]).
-
-/*
-  This repository does not yet define per-room energy facts.
-  We estimate energy from room capacity and slot period to keep
-  the optimizer functional without changing Student A/B/C files.
-*/
-
-room_energy_factor(Room, Factor) :-
-    room(Room, Capacity, _, _),
-    Factor is Capacity / 20.
-
-slot_peak_multiplier(Slot, Mult) :-
-    slot(Slot, _, Hour),
-    (Hour >= 14 -> Mult = 1.2 ; Mult = 1.0).
-
-assignment_energy(assign(_, Room, Slot), Energy) :-
-    room_energy_factor(Room, Base),
-    slot_peak_multiplier(Slot, Mult),
-    Energy is Base * Mult.
+% =====================================================
+% ENERGY SCORE
+% =====================================================
 
 compute_energy_score(Schedule, Score) :-
-    findall(E, (member(A, Schedule), assignment_energy(A, E)), Es),
-    sum_list(Es, Score).
+    total_energy(Schedule, Score).
+
+% =====================================================
+% FAIRNESS SCORE (teacher workload balance)
+% =====================================================
+
+compute_fairness_score(Schedule, Score) :-
+    fairness_score(Schedule, Score).
+
+% =====================================================
+% GAP SCORE (temporal dispersion per filiere)
+% =====================================================
 
 course_filiere(Course, Filiere) :-
-    atom(Course),
-    atomic_list_concat([Filiere|_], '_', Course).
+    atomic_list_concat([Filiere | _], '_', Course).
 
 filiere_day_hours(Schedule, Filiere, Day, SortedHours) :-
     findall(H,
@@ -59,7 +41,13 @@ list_gaps([H1, H2 | T], Gaps) :-
     Gaps is Gap + Rest.
 
 compute_gap_score(Schedule, Score) :-
-    findall(F, (member(assign(C, _, _), Schedule), course_filiere(C, F)), Fs0),
+    findall(F,
+        (
+            member(assign(C, _, _), Schedule),
+            course_filiere(C, F)
+        ),
+        Fs0
+    ),
     sort(Fs0, Filieres),
     findall(G,
         (
@@ -72,14 +60,18 @@ compute_gap_score(Schedule, Score) :-
     ),
     sum_list(Gaps, Score).
 
-/*
-  Compactness is mostly the opposite of gaps.
-  We keep both because they can be weighted differently.
-*/
+% =====================================================
+% COMPACTNESS SCORE
+% =====================================================
+
 compute_compactness_score(Schedule, Score) :-
     compute_gap_score(Schedule, GapScore),
     length(Schedule, N),
     Score is GapScore + (0.1 * N).
+
+% =====================================================
+% TRAVEL SCORE (penalize building changes within a day)
+% =====================================================
 
 room_changes([], 0).
 room_changes([_], 0).
@@ -88,31 +80,45 @@ room_changes([R1, R2 | T], Changes) :-
     room_changes([R2 | T], Rest),
     Changes is C + Rest.
 
-filiere_day_rooms(Schedule, Filiere, Day, RoomsByTime) :-
-    findall(H-R,
+room_building(Room, Building) :-
+    room(Room, _, _, _, Building, _).
+
+filiere_day_buildings(Schedule, Filiere, Day, BuildingsByTime) :-
+    findall(H-B,
         (
-            member(assign(C, R, S), Schedule),
+            member(assign(C, Room, S), Schedule),
             course_filiere(C, Filiere),
-            slot(S, Day, H)
+            slot(S, Day, H),
+            room_building(Room, B)
         ),
         Pairs
     ),
     keysort(Pairs, Sorted),
-    findall(Room, member(_-Room, Sorted), RoomsByTime).
+    findall(B, member(_-B, Sorted), BuildingsByTime).
 
 compute_travel_score(Schedule, Score) :-
-    findall(F, (member(assign(C, _, _), Schedule), course_filiere(C, F)), Fs0),
+    findall(F,
+        (
+            member(assign(C, _, _), Schedule),
+            course_filiere(C, F)
+        ),
+        Fs0
+    ),
     sort(Fs0, Filieres),
     findall(P,
         (
             member(F, Filieres),
             member(Day, [mon, tue, wed, thu, fri]),
-            filiere_day_rooms(Schedule, F, Day, Rooms),
-            room_changes(Rooms, P)
+            filiere_day_buildings(Schedule, F, Day, Buildings),
+            room_changes(Buildings, P)
         ),
         Penalties
     ),
     sum_list(Penalties, Score).
+
+% =====================================================
+% PEAK SCORE (count late sessions)
+% =====================================================
 
 compute_peak_score(Schedule, Score) :-
     findall(1,
@@ -125,10 +131,10 @@ compute_peak_score(Schedule, Score) :-
     ),
     length(Peaks, Score).
 
-/*
-  Lower is better.
-  Weights can be tuned later without changing optimizer logic.
-*/
+% =====================================================
+% FINAL SCORE (weighted)
+% =====================================================
+
 score(Schedule, Total) :-
     compute_energy_score(Schedule, Energy),
     compute_gap_score(Schedule, Gaps),
@@ -136,6 +142,7 @@ score(Schedule, Total) :-
     compute_compactness_score(Schedule, Compactness),
     compute_travel_score(Schedule, Travel),
     compute_peak_score(Schedule, Peak),
+
     Total is
         0.35 * Energy +
         0.15 * Gaps +
@@ -152,6 +159,7 @@ explain_score(Schedule) :-
     compute_travel_score(Schedule, Travel),
     compute_peak_score(Schedule, Peak),
     score(Schedule, Total),
+
     format('Energy score      : ~2f~n', [Energy]),
     format('Gap score         : ~2f~n', [Gaps]),
     format('Fairness score    : ~2f~n', [Fairness]),

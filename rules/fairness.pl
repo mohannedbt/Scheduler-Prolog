@@ -1,11 +1,4 @@
-:- module(fairness, [
-    instructor_workload/3,
-    workload_variance/2,
-    workload_range/2,
-    compute_fairness_score/2
-]).
-
-:- ensure_loaded('solver.pl').
+:- use_module(library(lists)).
 
 /*
   Teacher workload extracted from a generated schedule.
@@ -41,7 +34,14 @@ mean(List, Mean) :-
 workload_variance(Schedule, Variance) :-
     teacher_loads(Schedule, Loads),
     mean(Loads, M),
-    findall(D2, (member(L, Loads), D is L - M, D2 is D * D), D2s),
+    findall(D2,
+        (
+            member(L, Loads),
+            D is L - M,
+            D2 is D * D
+        ),
+        D2s
+    ),
     mean(D2s, Variance).
 
 workload_range(Schedule, Range) :-
@@ -53,7 +53,7 @@ workload_range(Schedule, Range) :-
 /*
   Lower score is better; combines variance and max-min spread.
 */
-compute_fairness_score(Schedule, Score) :-
+fairness_score(Schedule, Score) :-
     workload_variance(Schedule, Variance),
     workload_range(Schedule, Range),
     Score is Variance + Range.
